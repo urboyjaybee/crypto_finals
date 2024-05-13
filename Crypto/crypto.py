@@ -1,21 +1,32 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import base64
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import padding as symmetric_padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import hashes, hmac
+import os
 
 class CryptoApp:
     def __init__(self, root):
         # Initialize Tkinter window
         self.root = root
         self.root.geometry("900x700")
-        root.title("CryptoExplorer")
+        root.title("Crypto Explorer 🔒")
 
         # Welcome Message Window
         self.welcome_frame = ttk.Frame(root)
         self.welcome_frame.pack(pady=50)
 
-        ttk.Label(self.welcome_frame, text="Welcome to CryptoExplorer!", font=("Helvetica", 16)).pack(pady=10)
+        ttk.Label(self.welcome_frame, text="Welcome to CryptoExplorer! 🔒", font=("Helvetica", 16)).pack(pady=10)
         ttk.Label(self.welcome_frame, text="Explore encrypting and decrypting messages.", font=("Helvetica", 12)).pack()
         ttk.Button(self.welcome_frame, text="Let's Go!", command=self.show_crypto_interface).pack(pady=20)
+
 
         # Crypto Interface (Initially Hidden)
         self.crypto_frame = ttk.Frame(root)
@@ -25,7 +36,7 @@ class CryptoApp:
         ttk.Label(self.crypto_frame, text="Select Algorithm:").pack()
         self.algorithm_var = tk.StringVar()
         self.algorithm_combobox = ttk.Combobox(self.crypto_frame, textvariable=self.algorithm_var, state="readonly")
-        self.algorithm_combobox["values"] = ["XOR Cipher", "Caesar Cipher", "Block Cipher"]  # Add Caesar and Block Cipher
+        self.algorithm_combobox["values"] = ["XOR Cipher", "Caesar Cipher", "Block Cipher", "AES", "DES", "Triple DES"]  # Add Caesar and Block Cipher
         self.algorithm_combobox.pack(pady=10)
         self.algorithm_combobox.bind("<<ComboboxSelected>>", self.update_input_area)
 
@@ -56,6 +67,13 @@ class CryptoApp:
         ttk.Button(self.crypto_frame, text="Encrypt", command=self.encrypt).pack(pady=5)
         ttk.Button(self.crypto_frame, text="Decrypt", command=self.decrypt).pack(pady=5)
 
+        # File Encryption
+        ttk.Label(self.crypto_frame, text="File Encryption:").pack()
+        self.file_path = tk.StringVar()
+        ttk.Button(self.crypto_frame, text="Choose File", command=self.choose_file).pack(pady=5)
+        ttk.Button(self.crypto_frame, text="Encrypt File", command=self.encrypt_file).pack(pady=5)
+        ttk.Button(self.crypto_frame, text="Decrypt File", command=self.decrypt_file).pack(pady=5)
+
     def encrypt(self):
         algorithm = self.algorithm_var.get()
         if algorithm == "XOR Cipher":
@@ -79,6 +97,27 @@ class CryptoApp:
             encrypted_text = block_cipher(plaintext, key, block_size)
             self.output_text.delete("1.0", tk.END)
             self.output_text.insert(tk.END, f"Ciphertext (Block): {encrypted_text.decode()}")
+
+        elif algorithm == "AES":
+            plaintext = self.input_text.get("1.0", tk.END).encode()
+            key = self.key_entry.get().encode()
+            encrypted_text = aes_encrypt(plaintext, key)
+            self.output_text.delete("1.0", tk.END)
+            self.output_text.insert(tk.END, f"Ciphertext (AES): {encrypted_text.decode()}")
+
+        elif algorithm == "DES":
+            plaintext = self.input_text.get("1.0", tk.END).encode()
+            key = self.key_entry.get().encode()
+            encrypted_text = des_encrypt(plaintext, key)
+            self.output_text.delete("1.0", tk.END)
+            self.output_text.insert(tk.END, f"Ciphertext (DES): {encrypted_text.decode()}")
+
+        elif algorithm == "Triple DES":
+            plaintext = self.input_text.get("1.0", tk.END).encode()
+            key = self.key_entry.get().encode()
+            encrypted_text = triple_des_encrypt(plaintext, key)
+            self.output_text.delete("1.0", tk.END)
+            self.output_text.insert(tk.END, f"Ciphertext (Triple DES): {encrypted_text.decode()}")
 
     def decrypt(self):
         algorithm = self.algorithm_var.get()
@@ -104,21 +143,103 @@ class CryptoApp:
             self.output_text.delete("1.0", tk.END)
             self.output_text.insert(tk.END, f"Decrypted (Block): {decrypted_text.decode()}")
 
+        elif algorithm == "AES":
+            ciphertext = self.input_text.get("1.0", tk.END).encode()
+            key = self.key_entry.get().encode()
+            decrypted_text = aes_decrypt(ciphertext, key)
+            self.output_text.delete("1.0", tk.END)
+            self.output_text.insert(tk.END, f"Decrypted (AES): {decrypted_text.decode()}")
+
+        elif algorithm == "DES":
+            ciphertext = self.input_text.get("1.0", tk.END).encode()
+            key = self.key_entry.get().encode()
+            decrypted_text = des_decrypt(ciphertext, key)
+            self.output_text.delete("1.0", tk.END)
+            self.output_text.insert(tk.END, f"Decrypted (DES): {decrypted_text.decode()}")
+
+        elif algorithm == "Triple DES":
+            ciphertext = self.input_text.get("1.0", tk.END).encode()
+            key = self.key_entry.get().encode()
+            decrypted_text = triple_des_decrypt(ciphertext, key)
+            self.output_text.delete("1.0", tk.END)
+            self.output_text.insert(tk.END, f"Decrypted (Triple DES): {decrypted_text.decode()}")
+
     def show_crypto_interface(self):
         self.welcome_frame.pack_forget()
         self.crypto_frame.pack(pady=20)
 
+    def choose_file(self):
+        file_path = filedialog.askopenfilename()
+        self.file_path.set(file_path)
+
+    def encrypt_file(self):
+        file_path = self.file_path.get()
+        if not file_path:
+            messagebox.showerror("Error", "Please choose a file.")
+            return
+
+        algorithm = self.algorithm_var.get()
+        key = self.key_entry.get().encode()
+        output_file_path = filedialog.asksaveasfilename(defaultextension=".enc")
+
+        with open(file_path, "rb") as f:
+            data = f.read()
+
+        if algorithm == "AES":
+            encrypted_data = aes_encrypt(data, key)
+        elif algorithm == "DES":
+            encrypted_data = des_encrypt(data, key)
+        elif algorithm == "Triple DES":
+            encrypted_data = triple_des_encrypt(data, key)
+        else:
+            messagebox.showerror("Error", "Unsupported encryption algorithm for file encryption.")
+            return
+
+        with open(output_file_path, "wb") as f:
+            f.write(encrypted_data)
+
+        messagebox.showinfo("Success", f"File encrypted and saved as {output_file_path}")
+
+    def decrypt_file(self):
+        file_path = self.file_path.get()
+        if not file_path:
+            messagebox.showerror("Error", "Please choose a file.")
+            return
+
+        algorithm = self.algorithm_var.get()
+        key = self.key_entry.get().encode()
+        output_file_path = filedialog.asksaveasfilename(defaultextension=".dec")
+
+        with open(file_path, "rb") as f:
+            data = f.read()
+
+        if algorithm == "AES":
+            decrypted_data = aes_decrypt(data, key)
+        elif algorithm == "DES":
+            decrypted_data = des_decrypt(data, key)
+        elif algorithm == "Triple DES":
+            decrypted_data = triple_des_decrypt(data, key)
+        else:
+            messagebox.showerror("Error", "Unsupported encryption algorithm for file decryption.")
+            return
+
+        with open(output_file_path, "wb") as f:
+            f.write(decrypted_data)
+
+        messagebox.showinfo("Success", f"File decrypted and saved as {output_file_path}")
+
     def update_input_area(self, event=None):
         algorithm = self.algorithm_var.get()
-        if algorithm == "XOR Cipher":
+        if algorithm in ["XOR Cipher", "Caesar Cipher", "Block Cipher"]:
             self.input_text.config(state="normal")
             self.key_entry.config(state="normal")
-        elif algorithm == "Caesar Cipher":
+        elif algorithm in ["AES", "DES", "Triple DES"]:
             self.input_text.config(state="normal")
             self.key_entry.config(state="normal")
-        elif algorithm == "Block Cipher":
-            self.input_text.config(state="normal")
-            self.key_entry.config(state="normal")
+        else:
+            self.input_text.config(state="disabled")
+            self.key_entry.config(state="disabled")
+
 
 # XOR Cipher Functions
 def xor_encrypt(plaintext, key):
@@ -191,6 +312,75 @@ def block_cipher_decrypt(ciphertext, key, block_size):
         decrypted_data += decrypted_block
     unpadded_decrypted_data = unpad(decrypted_data)
     return unpadded_decrypted_data
+
+# AES Encryption and Decryption Functions
+def aes_encrypt(plaintext, key):
+    key = derive_key(key)
+    iv = os.urandom(16)
+    cipher = Cipher(algorithms.AES(key), modes.CFB(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+    return base64.b64encode(iv + ciphertext)
+
+def aes_decrypt(ciphertext, key):
+    key = derive_key(key)
+    ciphertext = base64.b64decode(ciphertext)
+    iv = ciphertext[:16]
+    ciphertext = ciphertext[16:]
+    cipher = Cipher(algorithms.AES(key), modes.CFB(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+    plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+    return plaintext
+
+# DES Encryption and Decryption Functions
+def des_encrypt(plaintext, key):
+    key = derive_key(key, algorithm="DES")
+    iv = os.urandom(8)
+    cipher = Cipher(algorithms.TripleDES(key), modes.CFB(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+    return base64.b64encode(iv + ciphertext)
+
+def des_decrypt(ciphertext, key):
+    key = derive_key(key, algorithm="DES")
+    ciphertext = base64.b64decode(ciphertext)
+    iv = ciphertext[:8]
+    ciphertext = ciphertext[8:]
+    cipher = Cipher(algorithms.TripleDES(key), modes.CFB(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+    plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+    return plaintext
+
+# Triple DES Encryption and Decryption Functions
+def triple_des_encrypt(plaintext, key):
+    key = derive_key(key, algorithm="TripleDES")
+    iv = os.urandom(8)
+    cipher = Cipher(algorithms.TripleDES(key), modes.CFB(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+    return base64.b64encode(iv + ciphertext)
+
+def triple_des_decrypt(ciphertext, key):
+    key = derive_key(key, algorithm="TripleDES")
+    ciphertext = base64.b64decode(ciphertext)
+    iv = ciphertext[:8]
+    ciphertext = ciphertext[8:]
+    cipher = Cipher(algorithms.TripleDES(key), modes.CFB(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+    plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+    return plaintext
+
+def derive_key(key, algorithm="AES"):
+    salt = b'salt_'
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32 if algorithm == "AES" else 16,
+        salt=salt,
+        iterations=100000,
+        backend=default_backend()
+    )
+    return kdf.derive(key)
+
 
 if __name__ == "__main__":
     root = tk.Tk()
